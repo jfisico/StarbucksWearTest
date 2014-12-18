@@ -1,0 +1,158 @@
+package co.sveinung.watchtest;
+
+import android.app.Activity;
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.SystemClock;
+import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
+import android.view.View;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Toast;
+
+import com.google.android.gms.common.ConnectionResult;
+import com.google.android.gms.common.api.GoogleApiClient;
+import com.google.android.gms.common.api.PendingResult;
+import com.google.android.gms.wearable.DataApi;
+import com.google.android.gms.wearable.PutDataMapRequest;
+import com.google.android.gms.wearable.PutDataRequest;
+import com.google.android.gms.wearable.Wearable;
+
+
+public class MobileMainActivity extends Activity {
+
+
+    private static final String TAG = MobileMainActivity.class.getSimpleName();
+    private GoogleApiClient apiClient;
+    private int count;
+    private String BarCode;
+
+    public void sendMessage(View view) {
+        // Do something in response to button click
+        //Log.d(TAG, "WORKING");
+        EditText editText = (EditText) findViewById(R.id.editText);
+        String barcode = editText.getText().toString();
+        sendKey(barcode);
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+        SharedPreferences sharedPref = this.getPreferences(Context.MODE_PRIVATE);
+        String barcode = sharedPref.getString("barcode","");
+        EditText editText = (EditText) findViewById(R.id.editText);
+        editText.setText(barcode);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ensureConnected();
+    }
+
+    private void ensureConnected() {
+        if (apiClient != null && apiClient.isConnected()) {
+            //updateCount();
+        }
+        else {
+            apiClient = new GoogleApiClient.Builder(this, onConnectedListener, onConnectionListener).addApi(Wearable.API).build();
+            apiClient.connect();
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        sendCount(-1);
+        handler.removeCallbacksAndMessages(handler);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        // Inflate the menu; this adds items to the action bar if it is present.
+        getMenuInflater().inflate(R.menu.main, menu);
+        return true;
+    }
+
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        // Handle action bar item clicks here. The action bar will
+        // automatically handle clicks on the Home/Up button, so long
+        // as you specify a parent activity in AndroidManifest.xml.
+        int id = item.getItemId();
+        if (id == R.id.action_settings) {
+            return true;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+    private final GoogleApiClient.ConnectionCallbacks onConnectedListener = new GoogleApiClient.ConnectionCallbacks() {
+        @Override
+        public void onConnected(Bundle bundle) {
+            Log.d(TAG, "Connected, start sharing data.");
+            count = 0;
+            //updateCount();
+        }
+
+        @Override
+        public void onConnectionSuspended(int i) {
+            cancelSend();
+        }
+    };
+
+    private void cancelSend() {
+        handler.removeCallbacksAndMessages(handler);
+    }
+
+    private final Handler handler = new Handler();
+
+    private void updateCount() {
+        sendCount(count++);
+        handler.postAtTime(new Runnable() {
+            @Override
+            public void run() {
+                updateCount();
+            }
+        }, handler, SystemClock.uptimeMillis() + 1000);
+    }
+
+    private void sendCount(final int count) {
+        PutDataMapRequest dataMap = PutDataMapRequest.create(Data.PATH_COUNT);
+        dataMap.getDataMap().putInt(Data.KEY_COUNT, count);
+        PutDataRequest request = dataMap.asPutDataRequest();
+        PendingResult<DataApi.DataItemResult> pendingResult = Wearable.DataApi
+                .putDataItem(apiClient, request);
+        Log.d(TAG, "Updating count to: " + count);
+    }
+
+    private void sendKey(String BarCode) {
+        //Context context = this;
+        SharedPreferences sharedPref = this.getPreferences(Context.MODE_PRIVATE);
+        SharedPreferences.Editor editor = sharedPref.edit();
+        editor.putString("barcode", BarCode);
+        editor.commit();
+        PutDataMapRequest dataMap = PutDataMapRequest.create("/barcode");
+        dataMap.getDataMap().putString("barcode", BarCode);
+        PutDataRequest request = dataMap.asPutDataRequest();
+        PendingResult<DataApi.DataItemResult> pendingResult = Wearable.DataApi
+                .putDataItem(apiClient, request);
+        Log.d(TAG, "Updating count to: " + BarCode);
+    }
+
+    private final GoogleApiClient.OnConnectionFailedListener onConnectionListener = new GoogleApiClient.OnConnectionFailedListener() {
+        @Override
+        public void onConnectionFailed(ConnectionResult connectionResult) {
+            Log.d(TAG, "Connection failed: " + connectionResult);
+            showMessage("Connection failed: " + connectionResult);
+            cancelSend();
+        }
+    };
+
+    private void showMessage(String message) {
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+}
